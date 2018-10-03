@@ -3,7 +3,6 @@
 namespace Illuminate\Tests\Cache;
 
 use Memcached;
-use Illuminate\Support\Carbon;
 use PHPUnit\Framework\TestCase;
 use Illuminate\Cache\MemcachedStore;
 
@@ -58,18 +57,39 @@ class CacheMemcachedStoreTest extends TestCase
         ]));
     }
 
-    public function testSetMethodProperlyCallsMemcache()
+    /**
+     * @param int  $minutes
+     * @param int  $expectedExpire
+     * @param bool $useUnixtime
+     * @dataProvider setMethodProperlyCallsMemcacheProvider
+     */
+    public function testSetMethodProperlyCallsMemcache($minutes, $expectedExpire, $useUnixtime)
     {
         if (! class_exists(Memcached::class)) {
             $this->markTestSkipped('Memcached module not installed');
         }
 
-        Carbon::setTestNow($now = Carbon::now());
+        \Illuminate\Support\Carbon::setTestNow($now = \Illuminate\Support\Carbon::now());
+        if ($useUnixtime) {
+            $expectedExpire += $now->timestamp;
+        }
         $memcache = $this->getMockBuilder('Memcached')->setMethods(['set'])->getMock();
-        $memcache->expects($this->once())->method('set')->with($this->equalTo('foo'), $this->equalTo('bar'), $this->equalTo($now->timestamp + 60));
+        $memcache->expects($this->once())->method('set')->with($this->equalTo('foo'), $this->equalTo('bar'), $this->equalTo($expectedExpire));
         $store = new MemcachedStore($memcache);
-        $store->put('foo', 'bar', 1);
-        Carbon::setTestNow();
+        $store->put('foo', 'bar', $minutes);
+        \Illuminate\Support\Carbon::setTestNow();
+    }
+
+    public function setMethodProperlyCallsMemcacheProvider()
+    {
+        return [
+            '-1min' => [-1, 0, false],
+            '0' => [0, 0, false],
+            '1min' => [1, 60, false],
+            '30days' => [30 * 24 * 60, 30 * 24 * 60 * 60, false],
+            '30days+1min' => [30 * 24 * 60 + 1, 30 * 24 * 60 * 60 + 60, true],
+            '31days' => [31 * 24 * 60, 31 * 24 * 60 * 60, true],
+            ];
     }
 
     public function testIncrementMethodProperlyCallsMemcache()
@@ -128,7 +148,7 @@ class CacheMemcachedStoreTest extends TestCase
 
         $memcache = $this->getMockBuilder('Memcached')->setMethods(['flush'])->getMock();
         $memcache->expects($this->once())->method('flush')->willReturn(true);
-        $store = new MemcachedStore($memcache);
+        $store = new \Illuminate\Cache\MemcachedStore($memcache);
         $result = $store->flush();
         $this->assertTrue($result);
     }
